@@ -1,5 +1,5 @@
 // RUM must be initialized before React renders
-import './datadog/rum'
+import './datadog/rum.ts'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'

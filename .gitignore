@@ -12,6 +12,15 @@ dist
 dist-ssr
 *.local
 
+# Flask static output (gerado pelo pnpm build)
+backend/static/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
 # Environment variables — NEVER commit credentials
 .env
 .env.local

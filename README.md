@@ -1,6 +1,9 @@
-# Datadog RUM Demo — React + TypeScript
+# Datadog RUM Demo — React + TypeScript + Flask
 
-Aplicação de demonstração das principais funcionalidades do [Datadog Real User Monitoring (RUM)](https://docs.datadoghq.com/real_user_monitoring/) construída com React 18 e TypeScript (Vite).
+Aplicação de demonstração das principais funcionalidades do [Datadog Real User Monitoring (RUM)](https://docs.datadoghq.com/real_user_monitoring/).
+
+- **Frontend**: React 18 + TypeScript (Vite) — compilado para assets estáticos
+- **Backend**: Python + Flask — serve os assets e expõe a API de demo instrumentada com `ddtrace`
 
 ---
 
@@ -18,70 +21,115 @@ Aplicação de demonstração das principais funcionalidades do [Datadog Real Us
 
 ## Pré-requisitos
 
-- Node.js ≥ 18
-- npm ≥ 10
+- Node.js ≥ 18 + pnpm ≥ 9 *(apenas para o build do frontend)*
+- Python ≥ 3.11
+- Datadog Agent rodando localmente *(para envio de traces APM)*
 
 ---
 
 ## Configuração
 
-### 1. Instale as dependências
+### 1. Variáveis de ambiente
 
-```bash
-npm install
-```
-
-### 2. Configure as variáveis de ambiente
-
-Copie o arquivo de exemplo e preencha com suas credenciais do Datadog:
+Copie o arquivo de exemplo e preencha com suas credenciais:
 
 ```bash
 cp .env.example .env
 ```
 
 ```env
-# Obtenha em: Datadog → UX Monitoring → RUM Applications → New Application
+# Datadog RUM (Frontend) — obtenha em: UX Monitoring → RUM Applications
 VITE_DD_APPLICATION_ID=your-application-id
 VITE_DD_CLIENT_TOKEN=your-client-token
-
-VITE_DD_SITE=datadoghq.com   # ou datadoghq.eu, us3.datadoghq.com, etc.
+VITE_DD_SITE=datadoghq.com
 VITE_DD_SERVICE=rum-demo
 VITE_DD_ENV=development
 
-# URL do backend instrumentado com dd-trace (para correlação RUM ↔ APM)
+# URL base da API (para correlação RUM ↔ APM)
 VITE_API_URL=http://localhost:8080
+
+# Backend Flask
+CORS_ORIGIN=http://localhost:5173
+PORT=8080
+FLASK_DEBUG=true
+
+# Datadog APM (Backend) — usados pelo ddtrace-run
+DD_SERVICE=rum-demo-api
+DD_ENV=development
+DD_VERSION=1.0.0
 ```
 
-### 3. Inicie o servidor de desenvolvimento
+### 2. Instale as dependências
+
+**Frontend:**
+```bash
+pnpm install
+```
+
+**Backend:**
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+---
+
+## Executar
+
+### Modo produção (Flask serve tudo — sem Node em runtime)
 
 ```bash
-npm run dev
+# 1. Compile o frontend
+pnpm build
+
+# 2. Suba o Flask com ddtrace
+DD_SERVICE=rum-demo-api DD_ENV=development \
+  ddtrace-run flask --app backend/app.py run --port 8080
 ```
 
-A aplicação estará disponível em `http://localhost:5173`.
+Acesse `http://localhost:8080`.
+
+### Modo desenvolvimento (Vite HMR + Flask API)
+
+```bash
+# Terminal 1 — frontend com hot reload
+pnpm dev
+
+# Terminal 2 — API backend
+flask --app backend/app.py run --port 8080
+```
+
+Acesse `http://localhost:5173`.
 
 ---
 
 ## Estrutura do projeto
 
 ```
-src/
-├── datadog/
-│   └── rum.ts           # Inicialização do RUM + helpers exportados
-├── components/
-│   ├── Header.tsx        # Navegação e login/logout (setUser / clearUser)
-│   └── ErrorBoundary.tsx # Captura erros React via componentDidCatch → addError
-└── pages/
-    ├── HomePage.tsx      # Custom Actions + demo de correlação RUM ↔ APM
-    ├── ErrorPage.tsx     # Custom Errors (manuais e não capturados)
-    └── UserPage.tsx      # User Identification
+.
+├── src/                     # Frontend React/TypeScript
+│   ├── datadog/rum.ts        # Inicialização do RUM + helpers
+│   ├── components/
+│   │   ├── Header.tsx         # Navegação, login/logout (setUser / clearUser)
+│   │   └── ErrorBoundary.tsx  # Captura erros via componentDidCatch → addError
+│   └── pages/
+│       ├── HomePage.tsx       # Custom Actions + demo RUM ↔ APM
+│       ├── ErrorPage.tsx      # Custom Errors
+│       └── UserPage.tsx       # User Identification
+├── backend/
+│   ├── app.py                # Flask: SPA fallback + endpoints /api/*
+│   ├── requirements.txt
+│   └── static/               # ← gerado pelo pnpm build (não commitado)
+├── vite.config.ts            # outDir: backend/static
+├── .env.example
+└── README.md
 ```
 
 ---
 
 ## Correlação RUM ↔ APM
 
-O SDK injeta automaticamente cabeçalhos de tracing distribuído em todas as requisições HTTP para origens definidas em `allowedTracingUrls`:
+O SDK injeta automaticamente cabeçalhos de tracing em requisições para a API:
 
 | Cabeçalho | Formato | Uso |
 |-----------|---------|-----|
@@ -90,45 +138,13 @@ O SDK injeta automaticamente cabeçalhos de tracing distribuído em todas as req
 | `x-datadog-sampling-priority` | Datadog | Prioridade de amostragem |
 | `traceparent` | W3C / OTel | Interoperabilidade com OpenTelemetry |
 
-Para que a correlação funcione, o backend precisa estar instrumentado com `dd-trace` e configurado para aceitar esses cabeçalhos via CORS.
-
-### Exemplo de configuração no backend (Node.js)
-
-```js
-require('dd-trace').init({
-  service: 'rum-demo-api',
-  env: process.env.DD_ENV,
-})
-
-app.use(cors({
-  origin: 'http://localhost:5173',
-  allowedHeaders: [
-    'x-datadog-trace-id',
-    'x-datadog-parent-id',
-    'x-datadog-sampling-priority',
-    'x-datadog-origin',
-    'traceparent',
-    'tracestate',
-  ],
-}))
-```
-
----
-
-## Scripts disponíveis
-
-| Comando | Descrição |
-|---------|-----------|
-| `npm run dev` | Servidor de desenvolvimento com HMR |
-| `npm run build` | Build de produção |
-| `npm run preview` | Preview do build de produção |
+O Flask está configurado com `flask-cors` para aceitar esses cabeçalhos, e o `ddtrace` os lê automaticamente para vincular cada span APM à sessão RUM correspondente.
 
 ---
 
 ## Referências
 
 - [Datadog RUM — Browser SDK](https://docs.datadoghq.com/real_user_monitoring/browser/)
-- [Configuração do RUM](https://docs.datadoghq.com/real_user_monitoring/browser/setup/)
 - [Correlação RUM e APM](https://docs.datadoghq.com/real_user_monitoring/platform/connect_rum_and_traces/)
+- [ddtrace — Python APM](https://ddtrace.readthedocs.io/en/stable/)
 - [Session Replay](https://docs.datadoghq.com/real_user_monitoring/session_replay/)
-- [User Sessions](https://docs.datadoghq.com/real_user_monitoring/browser/advanced_configuration/#user-session)
